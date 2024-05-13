@@ -12,8 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.                                                              SIC
 
+
+import math
 from devsim import *
 from . import model_create
+from .physics_avalanche import CreateImpactGeneration
+
+
 
 def SetUniversalParameters(device, region):
     universal = {
@@ -39,7 +44,13 @@ def SetSiliconParameters(device, region):
       'NC300'       : 3.25e15,  # '1/cm^3'
       'NV300'       : 4.8e15, # '1/cm^3'
       'EG300'       : 3.26,    # 'eV'
-     
+      #'NIE300'      : 3.89e-9,    # '1/cm^3'   SIC
+
+
+      ##'NIE'       : 1.02e10,    # '1/cm^3'   SI
+      #('NIE', '((NC * NV)^0.5) * exp(-EG/(2*V_t))*exp(DEG)', ('T')),
+
+     ###4H-SiC 的宽带隙导致极低的本征载流子浓度
 
     # SRH
       "taun" : 2.5e-6,
@@ -74,14 +85,14 @@ def CreateDensityOfStates(device, region, variables):###运行这个函数之前
       Neglects Bandgap narrowing.
     '''
     eq = (
-        ('NC', 'NC300', ()),
-      ('NV', 'NV300', ()),
+        ('NC', 'NC300 * (T/300)^1.5', ('T',)),
+      ('NV', 'NV300 * (T/300)^1.5', ('T',)),
       ('NTOT', 'Donors + Acceptors', ()),
       # Band Gap Narrowing
       ('DEG', '0', ()),
       #('DEG', 'V0.BGN * (log(NTOT/N0.BGN) + ((log(NTOT/N0.BGN)^2 + CON.BGN)^(0.5)))', ()),
       ('EG', 'EG300', ()),
-      ('NIE', '((NC * NV)^0.5) * exp(-EG/(2*V_t))*exp(DEG)', ('T')),
+      ('NIE', '3.89e-9', ()),
       ('EC', '-Potential- DEG/2', ('Potential',)),
       ('EV', 'EC - EG + DEG/2', ('Potential', 'T')),
       ('EI', '0.5 * (EC + EV + V_t*log(NC/NV))', ('Potential', 'T')),
@@ -146,6 +157,8 @@ def CreateSiliconPotentialOnly(device, region):
          ("IntrinsicHoles",           "NIE^2/IntrinsicElectrons"),
          ("IntrinsicCharge",          "kahan3(IntrinsicHoles, -IntrinsicElectrons, NetDoping)"),
          ("PotentialIntrinsicCharge", "-q * IntrinsicCharge")
+         
+         
     ):
         n = i[0]
         e = i[1]
@@ -213,25 +226,27 @@ def CreateSRH(device, region, variables):
             model_create.CreateNodeModelDerivative(device, region, "ElectronGeneration", Gn, i)
             model_create.CreateNodeModelDerivative(device, region, "HoleGeneration", Gp, i)
 
-def CreateECE(device, region, Jn):
+def CreateECE(device, region, Jn,impact_label):
     '''
       Electron Continuity Equation using specified equation for Jn
     '''
     NCharge = "q * Electrons"
     model_create.CreateNodeModel(device, region, "NCharge", NCharge)
     model_create.CreateNodeModelDerivative(device, region, "NCharge", NCharge, "Electrons")
+    CreateImpactGeneration(device, region, impact_label)
 
     equation(device=device, region=region, name="ElectronContinuityEquation", variable_name="Electrons",
              time_node_model = "NCharge",
              edge_model=Jn, variable_update="positive", node_model="ElectronGeneration")
 
-def CreateHCE(device, region, Jp):
+def CreateHCE(device, region, Jp,impact_label):
     '''
       Hole Continuity Equation using specified equation for Jp
     '''
     PCharge = "-q * Holes"
     model_create.CreateNodeModel(device, region, "PCharge", PCharge)
     model_create.CreateNodeModelDerivative(device, region, "PCharge", PCharge, "Holes")
+    CreateImpactGeneration(device, region, impact_label)
 
     equation(device=device, region=region, name="HoleContinuityEquation", variable_name="Holes",
              time_node_model = "PCharge",
@@ -249,18 +264,73 @@ def CreatePE(device, region):
     equation(device=device, region=region, name="PotentialEquation", variable_name="Potential",
              node_model="PotentialNodeCharge", edge_model="DField",
              time_node_model="", variable_update="log_damp")
+    
+def CreateHatakeyamaImpact():
+    '''
+    The Hatakeyama avalanche model describes the anisotropic behavior in 4H-SiC power devices. The impact ionization coefficient is obtainedaccording to the Chynoweth law.
+    Ref : https://onlinelibrary.wiley.com/doi/abs/10.1002/pssa.200925213
+    '''
+    T = 300 #K
+
+    hbarOmega = 0.19 # eV
+    _theta =1 # 1
+    T0 = 300.0 # K
+    k_T0_ev = 0.0257 # eV
+    
+    n_a_0001 = 1.76e8 # cm-1
+    n_a_1120 = 2.10e7 # cm-1
+    n_b_0001 = 3.30e7 # V/cm 
+    n_b_1120 = 1.70e7 # V/cm
+
+    p_a_0001 = 3.41e8 # cm-1
+    p_a_1120 = 2.96e7 # cm-1
+    p_b_0001 = 2.50e7 # V/cm 
+    p_b_1120 = 1.60e7 # V/cm 
+
+    #gamma = math.tanh(hbarOmega/(2*k_T0_ev))/math.tanh(hbarOmega/(2*k_T0_ev*T/T0))
+    gamma = 1
+
+    n_a = n_a_0001
+    n_b = n_b_0001
+    p_a = p_a_0001
+    p_b = p_b_0001
+
+    add_db_entry(material="SiliconCarbide",   parameter="gamma",        value=gamma,   unit="1",        description="gamma for Hatakeyama Avalanche Model")
+    add_db_entry(material="SiliconCarbide",   parameter="cutoff_angle",     value=4,   unit="degree",   description="cutoff_angle for Hatakeyama Avalanche Model")
+    add_db_entry(material="SiliconCarbide",   parameter="n_a_0001",  value=n_a_0001,   unit="cm-1",     description="n_a for Hatakeyama Avalanche Model")
+    add_db_entry(material="SiliconCarbide",   parameter="n_b_0001",  value=n_b_0001,   unit="V/cm",     description="n_b for Hatakeyama Avalanche Model")
+    add_db_entry(material="SiliconCarbide",   parameter="p_a_0001",  value=p_a_0001,   unit="cm-1",     description="p_a for Hatakeyama Avalanche Model")
+    add_db_entry(material="SiliconCarbide",   parameter="p_b_0001",  value=p_b_0001,   unit="V/cm",     description="p_b for Hatakeyama Avalanche Model")
+
+    add_db_entry(material="SiliconCarbide",   parameter="n_a_1120",  value=n_a_1120,   unit="cm-1",     description="n_a for Hatakeyama Avalanche Model")
+    add_db_entry(material="SiliconCarbide",   parameter="n_b_1120",  value=n_b_1120,   unit="V/cm",     description="n_b for Hatakeyama Avalanche Model")
+    add_db_entry(material="SiliconCarbide",   parameter="p_a_1120",  value=p_a_1120,   unit="cm-1",     description="p_a for Hatakeyama Avalanche Model")
+    add_db_entry(material="SiliconCarbide",   parameter="p_b_1120",  value=p_b_1120,   unit="V/cm",     description="p_b for Hatakeyama Avalanche Model")
 
 
-def CreateSiliconDriftDiffusion(device, region, mu_n="mu_n", mu_p="mu_p", Jn='Jn', Jp='Jp'):
+
+
+def SaveDataBase():
+    create_db(filename="bjt.db")
+
+    save_db()
+    
+
+def CreateSiliconDriftDiffusion(device, region, mu_n="mu_n", mu_p="mu_p", Jn='Jn', Jp='Jp',irradiation_flux=1e15,irradiation_label="test",impact_label="test"):
     '''
       Instantiate all equations for drift diffusion simulation
     '''
+    
     CreateDensityOfStates(device, region, ("Potential",))
     CreateQuasiFermiLevels(device, region, "Electrons", "Holes", ("Electrons", "Holes", "Potential"))
     CreatePE(device, region)
     CreateSRH(device, region, ("Electrons", "Holes", "Potential"))
-    CreateECE(device, region, Jn)
-    CreateHCE(device, region, Jp)
+    CreateECE(device, region, Jn,impact_label)
+    CreateHCE(device, region, Jp,impact_label)
+    CreateHatakeyamaImpact()
+    
+
+    SaveDataBase()
 
 
 def CreateSiliconDriftDiffusionContact(device, region, contact, Jn, Jp, is_circuit=False): 
