@@ -24,7 +24,8 @@ def main():
     #Get the initial guess from here
     set_node_values(device=device, region=region, name="Electrons", init_from="IntrinsicElectrons")
     set_node_values(device=device, region=region, name="Holes", init_from="IntrinsicHoles")
-    
+
+        
     
     element_from_edge_model(edge_model="EField", device=device, region=region)
     element_model(device=device, region=region, name="Emag", equation="(EField_x^2 + EField_y^2)^(0.5)")
@@ -32,11 +33,14 @@ def main():
     element_from_edge_model(edge_model="Jp", device=device, region=region)
     element_model(device=device, region=region, name="Jnmag", equation="(Jn_x^2 + Jn_y^2)^(0.5)")
     element_model(device=device, region=region, name="Jpmag", equation="(Jp_x^2 + Jp_y^2)^(0.5)")
-    
 
-    solve(type="dc", absolute_error=1e6, relative_error=1e-1, maximum_iterations=40)
-    write_devices    (file="bjt_dd_0.tec", type="tecplot")
+
+    solve(type="dc", absolute_error=1e4, relative_error=1e10, maximum_iterations=100)
+    
+    
     write_devices    (file="bjt_dd_0.msh", type="devsim")
+
+
 
 
     
