@@ -38,7 +38,6 @@ def set_params(device, region):
     }
     for k, v in params.items():
         set_parameter(device=device, region=region, name=k, value=v)
-
 ####
 #### NetDoping
 ####
