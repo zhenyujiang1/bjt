@@ -30,7 +30,7 @@ def set_params(device, region):
       'emitter_vdiff' : 1.0e-5,
       'emitter_width' : 5e-4,
       'sub_collector_center' : 13.75e-4,
-      'sub_collector_depth' : 4e-4,
+      'sub_collector_depth' : 40e-4,
       'sub_collector_doping' : 1e19,
       'sub_collector_hdiff' : 1.0e-5,
       'sub_collector_vdiff' : 1.0e-5,
