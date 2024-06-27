@@ -7,7 +7,7 @@ import subprocess
 
 def main():
 
-    for i in [40,41]:
+    for i in [2.8,2.9,3,3.1,3.2]:
         print(i)
         with open('vb2_{}.out'.format(i), 'w') as f:
             subprocess.call(['python', 'raser/field/bjt_circuit22.py', str(i)], stdout=f, stderr=subprocess.STDOUT)
